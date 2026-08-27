@@ -126,3 +126,31 @@ NumPy 2.0 移除了大量過去在 NumPy 1.x 標記為 Deprecated 的別名與�
 * **預設配置**：
   * 當前系統預設值已更新為 `--scale-x 1.0 --scale-z 1.0`。
   * 經 Series 35（287 點）物理標定評估，`scale_x = -1.0, scale_z = 1.0` 亦為物理反向對稱候選設定（LLK = 0.8766）。可依實驗樣品物理特徵隨時切換。
+
+---
+
+## 8. 即時動態繪圖 (Live Plotting) 白畫面與重構耗時線性增加 (Linear Slowdown)
+
+### 8.1 問題現象
+1. **白畫面現象**：在 GUI 中執行 DM / ML 演算法時，每隔 N 次迭代（預設 `show_obj_probe=20`）雖然會跳出繪圖視窗，但視窗內容呈現一片白色/空白，直到所有迭代結束才一次顯示。
+2. **耗時線性增加**：觀察終端機輸出，每 20 次迭代的運算週期時間 (`dt/cycle`) 呈現線性遞增（例如由 `0.064s` $\to$ `0.083s` $\to$ `0.107s`）。
+
+### 8.2 根本原因
+* **圖層持續疊加（導致線性變慢）**：
+  PyNX 原生 `pynx.utils.plot_utils.show_obj_probe` 在更新圖形時，僅重複執行 `plt.subplot(gs[0])` 與 `imshow()`，**從未調用 `fig.clf()` 清空前次圖層**。導致每次更新都在同一個 Figure 上堆疊 4 張新圖與線條。當迭代達到 200 次時，底層 Canvas 已疊加超過 40 層圖片，導致 Matplotlib `canvas.draw()` 耗時越來越長。
+* **Qt 繪圖事件阻塞（導致白畫面）**：
+  在 PyQt5 應用程式中，演算法於主執行緒執行期間，若未主動觸發 Qt 事件循環（`QApplication.processEvents()`），作業系統分配給該視窗的 Paint / Expose 事件不會被即時處理，因而僅顯示預設的白色背景底框。
+
+### 8.3 完整解決方案
+於 `pynx/utils/plot_utils.py` 的 `show_obj_probe` 函式中：
+1. 在取得 Figure 後立即加入 `fig.clf()` 清空歷史圖層，確保記憶體佔用恆定且渲染耗時不隨迭代增加。
+2. 在繪圖刷新處加入 `fig.canvas.flush_events()` 與 `QApplication.processEvents()`：
+   ```python
+   fig.canvas.draw_idle()
+   fig.canvas.flush_events()
+   from PyQt5.QtWidgets import QApplication
+   app = QApplication.instance()
+   if app is not None:
+       app.processEvents()
+   ```
+   如此即可在每一次迭代更新時，即時流暢呈現動態演化的 Object 與 Probe 振幅與相位圖，徹底告別白畫面與效能退化。
