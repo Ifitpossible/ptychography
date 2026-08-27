@@ -20,10 +20,14 @@ reconstructions and its PyQt5 GUI, customized for the TPS 25A beamline setup.
   **Note**: this script has hardcoded paths and experimental parameters (pixel size,
   detector distance, energy, wavelength) for one specific local test dataset — treat it as
   a template to copy and adapt, not a portable script.
+- **`pynx_at_tps25a/launch_gui.py`** — Fast GUI launcher and Series dataset workspace builder. Automatically resolves PyNX paths, loads Series HDF5 frames with Fermat scan commands, injects `ws` into the workspace, and pops up the PyQt5 panel.
+- **`LIMITATIONS_AND_ISSUES.md`** — Comprehensive reference for system environment compatibility, version constraints (NumPy 2.x, CUDA 12/13, Python 3.12 vs 3.13 ABI), and troubleshooting solutions.
 - **`scan_tools/fermat_spiral.py`** — Fermat's spiral point pattern generator. Supports Bluesky
   dual-arm / single-arm modes, continuous trajectory, and golden angle sampling with square boundary cropping.
 - **`scan_tools/generate_fermat_scan_cmd.py`** — Generates beamline motor control (`SFL`, `RES`) and
   detector trigger (`TRG`) command sequences (`STR` ... `END`) from Fermat spiral scan trajectories.
+- **`scan_tools/configure_eiger.py`** — Automated DECTRIS EIGER 1M HTTP API configuration, sequence calculation, and Arm/Disarm utility.
+- **`scan_tools/SCAN_MANUAL.md`** — Detailed manual on beamline motor protocol, position calculation, and timing specifications.
 - **`scan_tools/fermat_scan_commands.txt`** — Example beamline command file generated for XZ motor scanning.
 
 ## Fixed bug: GUI deadlock on Run DM / Run ML / Run All
