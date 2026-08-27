@@ -1,24 +1,98 @@
 import os
 import subprocess
 def _load_msvc_env():
-    vcvars_bat = r"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-    if os.path.exists(vcvars_bat) and "INCLUDE" not in os.environ:
-        try:
-            cmd = f'cmd /c "call \"{vcvars_bat}\" && set"'
-            proc = subprocess.run(cmd, stdout=subprocess.PIPE, text=True, shell=True)
-            for line in proc.stdout.splitlines():
-                if '=' in line:
-                    k, v = line.split('=', 1)
-                    os.environ[k] = v
-        except Exception:
-            pass
-_load_msvc_env()
+    candidates = [
+        os.path.expandvars(r"%LOCALAPPDATA%\portable\msvc\msvc-14.44.17.14_sdk-26100\setup_x64.bat"),
+        os.path.expandvars(r"%LOCALAPPDATA%\portable\msvc\msvc-14.44.17.14_sdk-26100\activate.cmd"),
+        r"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat",
+        r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat",
+    ]
+    for bat in candidates:
+        if os.path.exists(bat) and "INCLUDE" not in os.environ:
+            try:
+                cmd = f'cmd /c "call \"{bat}\" && set"'
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, text=True, shell=True)
+                for line in proc.stdout.splitlines():
+                    if '=' in line:
+                        k, v = line.split('=', 1)
+                        os.environ[k] = v
+                break
+            except Exception:
+                pass
+
+    # Ensure CUDA nvcc and tools are on PATH and CUDA_PATH
+    cuda_nvcc_bin = os.path.expandvars(r"%LOCALAPPDATA%\portable\cuda\cuda_nvcc\nvcc\bin")
+    if os.path.exists(cuda_nvcc_bin) and cuda_nvcc_bin not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = cuda_nvcc_bin + ";" + os.environ.get("PATH", "")
+    cuda_root = os.path.expandvars(r"%LOCALAPPDATA%\portable\cuda\cuda_nvcc\nvcc")
+    if os.path.exists(cuda_root):
+        os.environ["CUDA_PATH"] = cuda_root
+
+# Auto-resolve PyNX library path, matching site-packages, and CUDA DLL directory
+import sys
+pynx_paths = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "pynx"),
+    os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "Code", "PYNX", "PyNX")),
+    r"C:\Users\User\Desktop\AllenCheng\Code\PYNX\PyNX",
+]
+if sys.version_info >= (3, 13):
+    pynx_paths = [
+        os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "Code", "myvenv", "Lib", "site-packages")),
+        r"C:\Users\User\Desktop\AllenCheng\Code\myvenv\Lib\site-packages",
+    ] + pynx_paths
+
+for p in pynx_paths:
+    if os.path.exists(p) and p not in sys.path:
+        sys.path.insert(0, p)
+
+for cuda_cand in [
+    r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.5\bin",
+    os.path.expandvars(r"%LOCALAPPDATA%\portable\cuda\cuda_nvcc\nvcc\bin"),
+]:
+    if os.path.exists(cuda_cand):
+        if hasattr(os, 'add_dll_directory'):
+            try:
+                os.add_dll_directory(cuda_cand)
+            except Exception:
+                pass
+        if cuda_cand not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = cuda_cand + ";" + os.environ.get("PATH", "")
+
+import matplotlib
+import matplotlib.cm
+if not hasattr(matplotlib.cm, 'get_cmap'):
+    matplotlib.cm.get_cmap = matplotlib.colormaps.get_cmap
 
 import matplotlib.pyplot as plt
 plt.ion()
 import pandas as pd
 import numpy as np
-from pprint import  pprint
+if not hasattr(np, 'float'):
+    np.float = float
+if not hasattr(np, 'complex'):
+    np.complex = complex
+if not hasattr(np, 'int'):
+    np.int = int
+if not hasattr(np, 'bool'):
+    np.bool = bool
+if not hasattr(np, 'typeDict'):
+    np.typeDict = getattr(np, 'sctypeDict', {})
+if not hasattr(np, 'sctypes'):
+    np.sctypes = {
+        'int': [np.int8, np.int16, np.int32, np.int64],
+        'uint': [np.uint8, np.uint16, np.uint32, np.uint64],
+        'float': [np.float16, np.float32, np.float64],
+        'complex': [np.complex64, np.complex128],
+        'others': [bool, object, bytes, str, np.void]
+    }
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="pycuda")
+warnings.filterwarnings("ignore", message=".*The CUDA compiler succeeded.*")
+warnings.filterwarnings("ignore", message=".*creating CUBLAS context.*")
+warnings.filterwarnings("ignore", message=".*cuFFT plan destruction inhibited.*")
+
+from pprint import pprint
 from pynx.ptycho import *
 
 from pynx.ptycho.runner import PtychoRunnerScan
@@ -1288,8 +1362,8 @@ def pynx_plot_overview(ws_p, path_save='', path_default=path_default, figsize=(1
     if hasattr(ws_p, 'get_probe') or hasattr(ws_p, 'p') or hasattr(ws_p, 'get_obj'):
         # Extract ptycho object
         p = ws_p.p if hasattr(ws_p, 'p') and ws_p.p is not None else ws_p
-        # Plot using native operator
-        fig = plt.figure(figsize=figsize, dpi=dpi, label=f'Scan ID:{ws_p.scan}')
+        scan_lbl = getattr(ws_p, 'scan', getattr(ws_p, 'scanID', ''))
+        fig = plt.figure(figsize=figsize, dpi=dpi, label=f'Scan ID:{scan_lbl}')
         p = ShowObjProbe() * p
         if path_save:
             fig.savefig(path_save, bbox_inches='tight', dpi=dpi)
@@ -1394,7 +1468,7 @@ def pynx_plot_obj(ws_p, path_save='', path_default=path_default, figsize=(4, 4),
         obj = p.get_obj()
         mask = p.get_scan_area_obj() 
         coord = p.get_obj_coord() 
-        scan_id = ws_p.scan
+        scan_id = getattr(ws_p, 'scan', getattr(ws_p, 'scanID', ''))
     else:
         target_file = ws_p
         if not (isinstance(ws_p, str) and os.path.exists(ws_p)):
@@ -1587,7 +1661,7 @@ def pynx_plot_probe(ws_p, path_save='', path_default=path_default, figsize=(4, 4
         p = ws_p.p if hasattr(ws_p, 'p') and ws_p.p is not None else ws_p
         probe_final = p.get_probe()
         probe_coords = np.array(p.get_probe_coord())
-        scan_id = ws_p.scan
+        scan_id = getattr(ws_p, 'scan', getattr(ws_p, 'scanID', ''))
         
     else:
         if not (isinstance(ws_p, str) and os.path.exists(ws_p)):
@@ -3365,23 +3439,38 @@ class PtychoGUI(QWidget):
         super().closeEvent(event)
 
 
-def simple_gui():
+def simple_gui(blocking=None):
     """啟動 GUI 的入口函數"""
     global _gui_window
+    ip = None
     try:
         from IPython import get_ipython
         ip = get_ipython()
         if ip is not None:
-            ip.enable_gui('qt')
+            if getattr(ip, 'active_eventloop', None) not in ('qt', 'qt5'):
+                try:
+                    ip.enable_gui('qt5')
+                except Exception:
+                    try:
+                        ip.enable_gui('qt')
+                    except Exception:
+                        pass
     except Exception:
-        pass
+        ip = None
+
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
 
     _gui_window = PtychoGUI()
     _gui_window.show()
-    print("PyQt5 GUI 面板已啟動！(已啟用 Qt 即時 GUI 事件迴圈)")
+    _gui_window.raise_()
+    _gui_window.activateWindow()
+    print("PyQt5 GUI 面板已啟動！")
+
+    if blocking is True or (blocking is None and ip is None):
+        app.exec_()
+    return _gui_window
 
 
 

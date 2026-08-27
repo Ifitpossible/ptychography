@@ -20,6 +20,11 @@ reconstructions and its PyQt5 GUI, customized for the TPS 25A beamline setup.
   **Note**: this script has hardcoded paths and experimental parameters (pixel size,
   detector distance, energy, wavelength) for one specific local test dataset — treat it as
   a template to copy and adapt, not a portable script.
+- **`scan_tools/fermat_spiral.py`** — Fermat's spiral point pattern generator. Supports Bluesky
+  dual-arm / single-arm modes, continuous trajectory, and golden angle sampling with square boundary cropping.
+- **`scan_tools/generate_fermat_scan_cmd.py`** — Generates beamline motor control (`SFL`, `RES`) and
+  detector trigger (`TRG`) command sequences (`STR` ... `END`) from Fermat spiral scan trajectories.
+- **`scan_tools/fermat_scan_commands.txt`** — Example beamline command file generated for XZ motor scanning.
 
 ## Fixed bug: GUI deadlock on Run DM / Run ML / Run All
 
